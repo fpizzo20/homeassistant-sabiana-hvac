@@ -133,7 +133,6 @@ class SabianaTokenCoordinator(DataUpdateCoordinator[str]):
             self.short_jwt.expire_at.isoformat(),
             self.long_jwt.expire_at.isoformat(),
         )
-        _LOGGER.debug("Config entry data: %s", self.config_entry.data)
         return self.short_jwt.token
 
     async def _async_reauth(self) -> tuple[JWT, JWT]:

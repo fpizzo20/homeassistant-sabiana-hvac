@@ -14,6 +14,7 @@ from typing import TYPE_CHECKING
 
 import httpx
 from homeassistant.const import Platform
+from homeassistant.exceptions import ConfigEntryNotReady
 
 if TYPE_CHECKING:
     from homeassistant.config_entries import ConfigEntry
@@ -57,12 +58,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             entry.entry_id,
             str(err),
         )
-    except api.SabianaApiClientError:
-        _LOGGER.exception("API client error for entry %s", entry.entry_id)
-    except httpx.ConnectError:
-        _LOGGER.exception("Connection error for entry %s", entry.entry_id)
-    except httpx.TimeoutException:
-        _LOGGER.exception("Timeout error for entry %s", entry.entry_id)
+    except (api.SabianaApiClientError, httpx.RequestError) as err:
+        # Transient (cloud down, no internet at boot): let HA retry the setup
+        msg = f"Sabiana cloud not reachable: {err}"
+        raise ConfigEntryNotReady(msg) from err
     except Exception:
         _LOGGER.exception("Unexpected error during setup for entry %s", entry.entry_id)
     else:
@@ -96,7 +95,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             websocket_manager=websocket_manager,
         )
 
-        await device_coordinator.async_config_entry_first_refresh()
+        try:
+            await device_coordinator.async_config_entry_first_refresh()
+        except Exception:
+            # Don't leave a WebSocket (and its reconnect loop) behind on retry
+            await websocket_manager.async_disconnect()
+            raise
 
         hass.data.setdefault(DOMAIN, {})[entry.entry_id] = {
             "session": session,
